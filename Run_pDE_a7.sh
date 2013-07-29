@@ -1,7 +1,9 @@
 #!/bin/sh
 
 # Run pDE 
-LAMDEF=~/Projects/ParSims/lam-axon7.def
+#LAMDEF=~/Projects/ParSims/lam-axon7.def
+LAMBDEF=lam-axon7.def
+
 LAMN=8
 
 unset DISPLAY
