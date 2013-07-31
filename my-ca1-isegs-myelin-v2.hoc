@@ -1,0 +1,180 @@
+/*--------------------------------------------------------------------------------
+ axon for ca1 with hill, isegs, bare + myelin
+
+ soma->hill->iseg[0-k]->prox->myelin->node->myelin->node ... ->myelin
+
+ Jose Ambros-Ingerson 2008 jose@kiubo.net
+ 
+ ----------
+ 24Nov08 10pm
+   1 Make -v2 by adding iseg_L as in prox_L be total lenght os iseg's
+   2 Diameter changes fully tappered on first section, then constant.
+     eg, hill_d2==iseg[0]_prox iseg[0]_distal==iseg_d
+   3 make prox_d_prox==iseg_d and prox_d_dist==prox_d
+     diameters taper from hill_d1:hill_d2:iseg_d:prox_d:myelin_d:node_d:myelin_d...
+
+ ----------
+ 01Aug08 Added parm and code for aX_prox_n 
+   Defaults to aX_prox_n=1
+   Note that prox_l is total lenght of prox sections
+
+ --------------------------------------------------------------------------------*/
+
+// Testing code
+// load_file( "n420t-pc2-L10000-ignoreD-newsoma.hoc" )
+
+/*
+create soma
+  soma {
+    pt3dadd( -0.359000, 2.306000, 0.000000, 10.960000 )  // node 1
+    pt3dadd( 0.000000, -0.000000, 0.000000, 10.520000 )  // node 3348
+  }
+*/
+// End of Testing code
+// --------------------------------------------------------------------------------
+strdef buf_
+proc vdef_set(){ 
+  if( name_declared( $s1 ) != 5 ) {
+    sprint( buf_, "%s = %g", $s1, $2 )
+    execute( buf_ )
+  }
+}
+
+vdef_set( "idebug", 0 )
+
+create axon_hill, axon_iseg[1], axon_prox[1], axon_node[1], axon_myelin[1]
+strdef axon_id
+
+proc geometry(){ local i, hill_l, hill_d1, hill_d2, iseg_n, iseg_L, iseg_l, iseg_d, prox_n, prox_L, prox_l, prox_d, sx, sy, sz, sd, cy, cd, dd
+  hill_l = $1
+  hill_d1 = $2
+  hill_d2 = $3
+  iseg_n = $4
+  //  iseg_l = $5	
+  iseg_L = $5	
+  iseg_d = $6	
+  prox_n = $7
+  prox_L = $8
+  prox_d = $9
+  node_n = $10
+  node_l = $11
+  node_d = $12
+  myelin_l = $13
+  myelin_d = $14
+  
+  iseg_l = iseg_L / iseg_n
+  prox_l = prox_L / prox_n
+
+  axon_id = "my-ca1-isegs-myelin"
+  soma { sx=x3d(n3d()-1) sy=y3d(n3d()-1) sz=z3d(n3d()-1) sd=diam3d(n3d()-1)  } 	// record soma location
+  
+  soma connect axon_hill (0), 1
+  ni = 10
+  { cy=sy dy=-hill_l/ni cd=hill_d1 dd=(hill_d2-hill_d1)/ni }
+  axon_hill { 
+    pt3dclear()
+    // taper from hill_d1 to hill_d2
+    for i=0, ni {
+      pt3dadd( sx, cy, sz, cd )
+      if( i<ni ) { cy+=dy cd+=dd }
+    }
+    //    for i=0,hill_l pt3dadd( sx, sy-i/hill_d, sz, (sd*(hill_l-i) + hill_d*i )/hill_l )
+  }
+  if( idebug ) printf( "Done Hill\n" )
+
+  create axon_iseg[ iseg_n ]
+  connect axon_iseg[0](0), axon_hill(1)
+  for i=1, iseg_n-1 connect axon_iseg[i](0), axon_iseg[i-1](1)
+
+  if( idebug ) printf( "Done iseg connect\n" )
+  
+  { cd=hill_d2 }
+  for i=0, iseg_n-1 {	// taper from hill_d2 to iseg_d on first section
+    axon_iseg[i] {
+      pt3dclear()
+      pt3dadd( sx, cy, sz, cd )
+      { cy-=iseg_l cd=iseg_d }
+      pt3dadd( sx, cy, sz, cd )
+    }
+  }
+  if( idebug ) printf( "Done iseg\n" )
+  
+  create axon_prox[ prox_n ]
+  connect axon_prox[0](0), axon_iseg[iseg_n-1](1)
+  for i=1, prox_n-1 connect axon_prox[i](0), axon_prox[i-1](1)
+  //  connect axon_prox(0), axon_iseg[iseg_n-1](1)
+
+  if( idebug ) printf( "Done prox connect\n" )
+
+  { cd=iseg_d }
+  for i=0, prox_n-1 {	// taper from iseg_d to prox_d  on first section
+    axon_prox[i] {
+      pt3dclear()
+      pt3dadd( sx, cy, sz, cd )
+      { cy-=prox_l cd=prox_d }
+      pt3dadd( sx, cy, sz, cd )
+    }
+  }
+  if( idebug ) printf( "Done prox\n" )
+
+  if( node_n <= 0 ) {
+    access axon_node[0] delete_section()
+    access axon_myelin[0] delete_section()
+  }
+  if( node_n > 0 ){
+    create axon_node[node_n], axon_myelin[node_n+1]
+    // connect axon_myelin[0](0), axon_prox(1)
+    connect axon_myelin[0](0), axon_prox[prox_n-1](1)
+    axon_myelin[0] {
+      pt3dclear()
+      pt3dadd( sx, cy, sz, prox_d )
+      cy -= myelin_l
+      pt3dadd( sx, cy, sz, myelin_d )
+    }
+    
+    for i=0, node_n-1  { 
+      connect axon_node[i](0), axon_myelin[i](1)
+      connect axon_myelin[i+1](0), axon_node[i](1)
+    }
+    
+    for i=0, node_n-1 {
+      axon_node[i] {
+	pt3dclear()
+	pt3dadd( sx, cy, sz, node_d )
+	cy -= node_l 
+	pt3dadd( sx, cy, sz, node_d )
+      }
+      axon_myelin[i+1] {
+	pt3dclear()
+	pt3dadd( sx, cy, sz, myelin_d )
+	cy -= myelin_l
+	pt3dadd( sx, cy, sz, myelin_d )
+      }
+    }
+  } 
+}
+
+objref aX_s[4]
+
+for i=0,3 { 
+  axon_prox	aX_s[i] = new SectionRef()
+}
+
+vdef_set( "aX_hill_l", 3 )
+vdef_set( "aX_hill_d1", 5 )
+vdef_set( "aX_hill_d2", 0.4 )
+vdef_set( "aX_iseg_n", 20 )
+vdef_set( "aX_iseg_l", 5 )
+vdef_set( "aX_iseg_d", 0.4 )
+vdef_set( "aX_prox_n", 1 )
+vdef_set( "aX_prox_l", 200 )
+vdef_set( "aX_prox_d", 0.4 )
+vdef_set( "aX_node_n", 10 )
+vdef_set( "aX_node_l", 1 )
+vdef_set( "aX_node_d", 0.4 )
+vdef_set( "aX_myelin_l", 100 )
+vdef_set( "aX_myelin_d", 0.4 )
+
+
+geometry( aX_hill_l, aX_hill_d1, aX_hill_d2, aX_iseg_n, aX_iseg_l, aX_iseg_d, aX_prox_n, aX_prox_l, aX_prox_d, \
+          aX_node_n, aX_node_l, aX_node_d, aX_myelin_l, aX_myelin_d )
